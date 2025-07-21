@@ -23,7 +23,7 @@ DESCRIPTION = (
     " for interacting with printers via LPR protocol or RAW mode,"
     " as well as a proxy/server for debugging, job capture,"
     " and protocol analysis."
-),
+)
 
 PACKAGE_NAME = "PyPrintLpr"
 

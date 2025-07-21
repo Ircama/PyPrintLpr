@@ -240,6 +240,16 @@ with LprClient('192.168.1.100', port="LPR", queue='PASSTHRU') as lpr:
     lpr.send(data)
 ```
 
+Some usage examples:
+
+```cmd
+python3 -m pylpr client -a 127.0.0.1 -f SECURITY.md -p lpr  # Send SECURITY.md to the LPR server using the default queue
+python3 -m pylpr client -a 127.0.0.1 -p lpr -s user -q PASSTHRU  # List queue (compact form)
+python3 -m pylpr client -a 127.0.0.1 -p lpr -S user -q PASSTHRU  # List queue (long form)
+python3 -m pylpr client -a 127.0.0.1 -p lpr -P  # Traverse all jobs to be printed by the default queue
+python3 -m pylpr client -a 127.0.0.1 -p lpr -R job  # Remove a job
+```
+
 ### Server/Proxy API
 Capture, forward, manage LPR requests. Also process RAW requests.
 
@@ -267,7 +277,8 @@ server = LprServer(save_files=True, save_path='lpr_jobs')
 
 ## Examples
 
-### Capture LPR job:
+### Run the server:
+
 ```bash
 python3 -m pyprintlpr server -a 192.168.1.100 -t -l 515
 ```

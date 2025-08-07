@@ -11,22 +11,54 @@ from datetime import datetime
 from typing import Optional, List, Tuple, Dict, Any
 from pathlib import Path
 import yaml
+from collections import Counter
 from hexdump2 import hexdump, color_always
+
+try:
+    from epson_escp2.epson_decode import decode_escp2_commands
+    EPSON_DECODE_AVAILABLE = True
+except ImportError:
+    EPSON_DECODE_AVAILABLE = False
+
 
 REPLACEMENTS: dict[int, List[Tuple[bytes, bytes]]] = {
     9000: [(b'foo', b'bar')]
 }
 
 def trace_data(data: bytes, direction: str, port: int, enabled: bool, description: str = ""):
-    """Enhanced trace function with protocol command descriptions"""
+    """Trace function"""
     if not enabled or not data or port in EXCLUDED_TRACE_PORTS:
         return
     desc_str = f" - {description}" if description else ""
     logging.warning(f"\n[{direction} port {port}]{desc_str}")
     color_always()
     hexdump(data)
+
 EXCLUDED_TRACE_PORTS = set()
 
+
+def decode_data(
+    data: bytes,
+    direction: str,
+    port: int,
+    enabled: bool,
+    show_image: bool,
+    dump_image: bool,
+    description: str = ""
+):
+    """Epson decode function with protocol command descriptions"""
+    if not EPSON_DECODE_AVAILABLE:
+        logging.error("Epson ESC/P2 decoding is not available (epson_escp2 not installed).")
+        return
+    if not data or port in EXCLUDED_TRACE_PORTS:
+        return
+    desc_str = f" - {description}" if description else ""
+    logging.warning(f"\n[{direction} port {port}]{desc_str}")
+    print(
+        decode_escp2_commands(
+            data, show_image=show_image, dump_image=dump_image
+        )
+    )
 
 @dataclass(frozen=True)
 class PortMapping:
@@ -57,7 +89,6 @@ class LprServer:
         Read exactly n bytes from reader, with self.timeout seconds timeout.
         Returns partial data if timeout expires.
         """
-        import asyncio
         buf = bytearray()
         remaining = n
         while remaining > 0:
@@ -235,7 +266,6 @@ class LprServer:
                     for cmd in PRINT_FILE_CMDS:
                         printfile_lines.extend(parsed.get(cmd, []))
                     n_lines = parsed.get('N', [])
-                    from collections import Counter
                     pf_counter = Counter(printfile_lines)
                     datafile_to_filename = {}
                     n_idx = 0
@@ -310,7 +340,6 @@ class LprServer:
                     for cmd in PRINT_FILE_CMDS:
                         printfile_lines.extend(parsed.get(cmd, []))
                     n_lines = parsed.get('N', [])
-                    from collections import Counter
                     pf_counter = Counter(printfile_lines)
                     datafile_to_filename = {}
                     n_idx = 0
@@ -408,7 +437,6 @@ class LprServer:
                 parsed = control_info.get('parsed_commands', {})
                 f_lines = parsed.get('f', [])
                 n_lines = parsed.get('N', [])
-                from collections import Counter
                 f_counter = Counter(f_lines)
                 datafile_to_filename = {}
                 n_idx = 0
@@ -489,6 +517,9 @@ async def handle_lpr_protocol(
     writer: asyncio.StreamWriter,
     port: int,
     trace: bool,
+    decode: bool,
+    show_image: bool,
+    dump_image: bool,
     lpr_server: LprServer
 ) -> None:
     """Handle LPR protocol according to RFC 1179"""
@@ -753,7 +784,11 @@ async def handle_lpr_protocol(
                                     await writer.drain()
                                     continue
                                 current_job.data_file = data_content
-                                trace_data(data_content, "client → server", port, trace, "Dump of the Data file")
+
+                                if decode:
+                                    decode_data(data_content, "client → server", port, trace, "Decoding the Data file")
+                                else:
+                                    trace_data(data_content, "client → server", port, trace, "Dump of the Data file")
                                 
                                 # Read terminating null byte
                                 null_byte = await reader.read(1)
@@ -826,7 +861,14 @@ async def handle_lpr_protocol(
                                     logging.warning(f"\nLPR: ERROR - Expected {count} bytes, received {len(data_content)} bytes (timeout or disconnect)")
                                     trace_data(response, "server → client", port, trace, "Invalid data file length")
                                 current_job.data_file = data_content
-                                trace_data(data_content, "client → server", port, trace, "Dump of the Data file")
+
+                                if decode:
+                                    decode_data(
+                                        data_content, "client → server", port, trace, show_image, dump_image, "Decoding the Data file"
+                                    )
+                                else:
+                                    trace_data(data_content, "client → server", port, trace, "Dump of the Data file")
+
                                 # Read terminating null byte
                                 null_byte = await reader.read(1)
                                 if null_byte == b'\x00':
@@ -855,7 +897,7 @@ async def handle_lpr_protocol(
                                         await writer.wait_closed()
                                 else:
                                     if null_byte == b'':
-                                        logging.warning(f"\nLPR: ERROR - Missing null terminator")
+                                        logging.info(f"\nLPR: INFO - Missing null terminator")
                                     else:
                                         logging.warning(f"\nLPR: ERROR - Expected null terminator, got: {null_byte}")
                                         response = b'\x01'
@@ -912,13 +954,18 @@ async def handle_tcp(
     writer: asyncio.StreamWriter,
     mapping: PortMapping,
     trace: bool,
+    decode: bool,
+    show_image: bool,
+    dump_image: bool,
     lpr_server: LprServer
 ) -> None:
     lp, rh, rp = mapping.port, mapping.remote_host, mapping.remote_port
 
     if rh is None or rp is None:  # local loopback without forwarding data to the printer
         if lp == 515:  # LPR port
-            await handle_lpr_protocol(reader, writer, lp, trace, lpr_server)
+            await handle_lpr_protocol(
+                reader, writer, lp, trace, decode, show_image, dump_image, lpr_server
+            )
         else:
             # Loopback behavior for other ports including 9100
             try:
@@ -996,10 +1043,19 @@ async def handle_tcp(
                 except Exception:
                     pass
 
-async def start_tcp(mapping: PortMapping, trace: bool, lpr_server: LprServer) -> None:
+async def start_tcp(
+    mapping: PortMapping,
+    trace: bool,
+    decode: bool,
+    show_image: bool,
+    dump_image: bool,
+    lpr_server: LprServer
+) -> None:
     try:
         server = await asyncio.start_server(
-            lambda r, w: handle_tcp(r, w, mapping, trace, lpr_server),
+            lambda r, w: handle_tcp(
+                r, w, mapping, trace, decode, show_image, dump_image, lpr_server
+            ),
             host='0.0.0.0', port=mapping.port
         )
     except PermissionError:
@@ -1059,15 +1115,23 @@ async def server_proxy(
     tcp_ports: List[PortMapping],
     udp_ports: List[PortMapping],
     trace: bool,
+    decode: bool,
+    show_image: bool,
+    dump_image: bool,
     save_files: bool,
     save_path: None,
     timeout: float = 10.0,
 ) -> None:
     # Create LPR server instance
-    lpr_server = LprServer(save_files=save_files, save_path=save_path, timeout=timeout)
+    lpr_server = LprServer(
+        save_files=save_files, save_path=save_path, timeout=timeout
+    )
     tasks = (
-        [start_tcp(m, trace, lpr_server) for m in tcp_ports]
-        + [start_udp(m, trace) for m in udp_ports]
+        [
+            start_tcp(
+                m, trace, decode, show_image, dump_image, lpr_server
+            ) for m in tcp_ports
+        ] + [start_udp(m, trace) for m in udp_ports]
     )
     await asyncio.gather(*tasks)
 
@@ -1088,6 +1152,24 @@ def main():
         '--trace',
         action='store_true',
         help='Enable hex dump tracing'
+    )
+    parser.add_argument(
+        '-d',
+        '--decode',
+        action='store_true',
+        help='Decode data file including Epson sequences (requires epson_escp2)'
+    )
+    parser.add_argument(
+        '-I',
+        '--show-image',
+        action='store_true',
+        help='When decoding, also show image (requires epson_escp2)'
+    )
+    parser.add_argument(
+        '-i',
+        '--dump-image',
+        action='store_true',
+        help='When decoding, also dump image (requires epson_escp2)'
     )
     parser.add_argument(
         '-s',
@@ -1149,6 +1231,15 @@ def main():
     else:
         logging.basicConfig(level=logging_level, format=logging_fmt)
 
+    if not EPSON_DECODE_AVAILABLE:
+        if args.decode or args.show_image or args.dump_image:
+            logging.error("Options --decode (-d), --show-image (-I), and --dump-image (-i) require the epson_escp2 package to be installed.")
+            sys.exit(1)
+
+    if (args.dump_image or args.show_image) and not args.decode:
+        logging.error("Options --dump-image (-i) and --show-image (-I) require --decode (-d) to be set.")
+        sys.exit(1)
+
     if args.quiet:
         logging.getLogger().setLevel(logging.WARNING)
 
@@ -1169,7 +1260,7 @@ def main():
             sys.exit(1)
 
     target_ip = args.address
-    
+
     tcp_port_map = {
         515: 515,     # LPR
         9100: 9100,   # Raw
@@ -1208,6 +1299,9 @@ def main():
                 tcp_ports,
                 udp_ports,
                 args.trace,
+                args.decode,
+                args.show_image,
+                args.dump_image,
                 args.save_files,
                 save_path=args.save_path,
                 timeout=args.timeout

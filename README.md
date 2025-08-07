@@ -11,12 +11,14 @@ RFC 1179 client and server toolkits and Python library for interacting with prin
 - Bidirectional TCP/UDP proxy and traffic inspection
 - Job queue management and archiving
 - Hexdump tracing and protocol analysis
+- Advanced Epson ESC/P2 (if epson_escp2 is installed)
 - Cross-platform (Windows, Linux, macOS)
 
 ## Installation
 
 ```bash
 pip install PyPrintLpr
+pip install epson_escp2  # Support advanced debugging of the Epson ESC/P2 protocol with the "server -d" option
 ```
 
 ## Command Line Usage
@@ -88,30 +90,29 @@ Notes:
 Run the server/proxy to capture, forward, or analyze print jobs:
 
 ```
-usage: pyprintlpr server [-h] [-a ADDRESS] [-t] [-s] [-p SAVE_PATH] [-q] [-l PORTS]
-                         [-e PORTS] [--timeout TIMEOUT]
+usage: pyprintlpr server [-h] [-a ADDRESS] [-t] [-d] [-I] [-i] [-s] [-p SAVE_PATH] [-q] [-l PORTS] [-e PORTS]
+                         [--timeout TIMEOUT]
 
 RAW and LPR print server with proxy, forward and local loopback features.
 
 optional arguments:
   -h, --help            show this help message and exit
   -a ADDRESS, --address ADDRESS
-                        Printer IP address (if not provided, runs in local-only
-                        mode)
+                        Printer IP address (if not provided, runs in local-only mode)
   -t, --trace           Enable hex dump tracing
+  -d, --decode          Decode data file including Epson sequences (requires epson_escp2)
+  -I, --show-image      When decoding, also show image (requires epson_escp2)
+  -i, --dump-image      When decoding, also dump image (requires epson_escp2)
   -s, --save-files      Save received print jobs to disk
   -p SAVE_PATH, --save-path SAVE_PATH
-                        Path name of the directory including the saved jobs
-                        (defaut: "lpr_jobs")
+                        Path name of the directory including the saved jobs (defaut: "lpr_jobs")
   -q, --quiet           Do not print debug data
   -l PORTS, --loopback PORTS
-                        Comma-separated list of ports to loopback instead of
-                        forwarding to the target IP (e.g., "515,9100")
+                        Comma-separated list of ports to loopback instead of forwarding to the target IP (e.g.,
+                        "515,9100")
   -e PORTS, --exclude PORTS
-                        Comma-separated list of ports to exclude from tracing
-                        (e.g., "515,9100")
-  --timeout TIMEOUT     Timeout in seconds for receiving control/data files
-                        (default: 10.0 seconds)
+                        Comma-separated list of ports to exclude from tracing (e.g., "515,9100")
+  --timeout TIMEOUT     Timeout in seconds for receiving control/data files (default: 10.0 seconds)
 
 RAW/LPR print server.
 ```
@@ -243,11 +244,11 @@ with LprClient('192.168.1.100', port="LPR", queue='PASSTHRU') as lpr:
 Some usage examples:
 
 ```cmd
-python3 -m pylpr client -a 127.0.0.1 -f SECURITY.md -p lpr  # Send SECURITY.md to the LPR server using the default queue
-python3 -m pylpr client -a 127.0.0.1 -p lpr -s user -q PASSTHRU  # List queue (compact form)
-python3 -m pylpr client -a 127.0.0.1 -p lpr -S user -q PASSTHRU  # List queue (long form)
-python3 -m pylpr client -a 127.0.0.1 -p lpr -P  # Traverse all jobs to be printed by the default queue
-python3 -m pylpr client -a 127.0.0.1 -p lpr -R job  # Remove a job
+python3 -m pyprintlpr client -a 127.0.0.1 -f SECURITY.md -p lpr  # Send SECURITY.md to the LPR server using the default queue
+python3 -m pyprintlpr client -a 127.0.0.1 -p lpr -s user -q PASSTHRU  # List queue (compact form)
+python3 -m pyprintlpr client -a 127.0.0.1 -p lpr -S user -q PASSTHRU  # List queue (long form)
+python3 -m pyprintlpr client -a 127.0.0.1 -p lpr -P  # Traverse all jobs to be printed by the default queue
+python3 -m pyprintlpr client -a 127.0.0.1 -p lpr -R job  # Remove a job
 ```
 
 ### Server/Proxy API
@@ -279,8 +280,12 @@ server = LprServer(save_files=True, save_path='lpr_jobs')
 
 ### Run the server:
 
+To open the port 161 with Linux O.S., the server shall be run as root.
+
 ```bash
 python3 -m pyprintlpr server -a 192.168.1.100 -t -l 515
+
+python3 -m pyprintlpr server -a 192.168.178.29 -e 3289,161 -d -s -l 515,9100  # decode the Epson ESC/P2 protocol.
 ```
 
 ### Send print job:

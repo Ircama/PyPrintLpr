@@ -5,14 +5,20 @@
 LPR client
 """
 
+import sys
 import socket
 import logging
 import random
 import getpass
 import datetime
-import struct
 import yaml
 from typing import Union, Optional
+try:
+    from epson_escp2.epson_encode import EpsonEscp2
+    EPSON_ESCP2_AVAILABLE = True
+except ImportError:
+    EPSON_ESCP2_AVAILABLE = False
+
 
 class LprClient:
     """
@@ -73,22 +79,6 @@ class LprClient:
         self.NUL = b'\x00'  # 0x00 (null)
         self.FF = b'\x0c'   # flush buffer
         self.INITIALIZE_PRINTER = b'\x1b@'
-
-        # Define specific Epson sequences
-        self.EXIT_PACKET_MODE = b'\x00\x00\x00\x1b\x01@EJL 1284.4\n@EJL     \n'
-        self.ENTER_D4 = b'\x00\x00\x00\x1b\x01@EJL 1284.4\n@EJL\n@EJL\n'
-        self.REMOTE_MODE = b'\x1b' + self.remote_cmd("(R", b'\x00REMOTE1')  # ESC "(R" 08H 00H 00H "REMOTE1"
-        self.ENTER_REMOTE_MODE = (
-            self.INITIALIZE_PRINTER +
-            self.INITIALIZE_PRINTER +
-            self.REMOTE_MODE
-        )
-        self.EXIT_REMOTE_MODE = b'\x1b\x00\x00\x00'
-        self.JOB_START = self.remote_cmd("JS", b'\x00\x00\x00\x00')
-        self.JOB_END = self.remote_cmd("JE", b'\x00')
-        self.PRINT_NOZZLE_CHECK = self.remote_cmd("NC", b'\x00\x00')
-        self.VERSION_INFORMATION = self.remote_cmd("VI", b'\x00\x00')
-        self.LD = self.remote_cmd("LD", b'')
 
     def __enter__(self) -> "LprClient":
         self.connect()
@@ -154,21 +144,7 @@ class LprClient:
         data = self.sock.recv(self.recv_buffer)
         return data
 
-    def remote_cmd(self, cmd: str, args: bytes) -> bytes:
-        """Generate a Remote Mode command."""
-        if len(cmd) != 2:
-            raise ValueError("command should be exactly 2 characters")
-        return cmd.encode() + struct.pack('<H', len(args)) + args
-
-    def set_timer(self) -> bytes:
-        """Synchronize RTC by setting the current time with TI"""
-        now = datetime.datetime.now()
-        t_data = b'\x00'
-        t_data += now.year.to_bytes(2, 'big')  # Year
-        t_data += bytes([now.month, now.day, now.hour, now.minute, now.second])
-        return self.remote_cmd("TI", t_data)
-
-    def _send_lpr_command(self, command_code: int, *args: bytes, noreceive: bool=False) -> None:
+    def send_lpr_command(self, command_code: int, *args: bytes, noreceive: bool=False) -> None:
         """
         Send an LPR command and wait for acknowledgment.
         
@@ -265,13 +241,13 @@ class LprClient:
             logging.debug(f"LPR Job {job_number}: Control file={control_filename}, Data file={data_filename}")
             
             # Step 1: Send "Receive a printer job" command (code 02) without space after command
-            self._send_lpr_command(2, self.queue.encode('ascii'))
+            self.send_lpr_command(2, self.queue.encode('ascii'))
             
             # Step 2: Create and send control file
             control_content = self._create_control_file(data_filename, job_number)
             
             # Send "Receive control file" subcommand (code 02) with correct spacing
-            self._send_lpr_command(2, str(len(control_content)).encode('ascii'), 
+            self.send_lpr_command(2, str(len(control_content)).encode('ascii'), 
                                  control_filename.encode('ascii'))
             
             # Send control file content + NUL terminator
@@ -284,7 +260,7 @@ class LprClient:
             
             # Step 3: Send data file
             # Send "Receive data file" subcommand (code 03) with correct spacing
-            self._send_lpr_command(3, str(len(data)).encode('ascii'), 
+            self.send_lpr_command(3, str(len(data)).encode('ascii'), 
                                  data_filename.encode('ascii'))
             
             # Send data file content + NUL terminator
@@ -416,7 +392,7 @@ def main():
         '--epson',
         dest='epson',
         action='store_true',
-        help='Use Epson header and footer'
+        help='Use Epson header and footer (epson_escp2 package needed)'
     )
     parser.add_argument(
         '-q',
@@ -530,11 +506,11 @@ def main():
         ) as lpr:
             if args.print_queue:
                 # Send the 'Print any waiting jobs' command (0x01) to the specified queue
-                lpr._send_lpr_command(1, args.queue.encode('ascii'))
+                lpr.send_lpr_command(1, args.queue.encode('ascii'))
                 print(f"Sent 'Print any waiting jobs' command to queue '{args.queue}'")
                 return
             if args.status:
-                lpr._send_lpr_command(3, (args.queue + " " + args.status).encode('ascii'), noreceive=True)
+                lpr.send_lpr_command(3, (args.queue + " " + args.status).encode('ascii'), noreceive=True)
                 print(f"Sent 'Send queue state (short)' command with attributes '{args.status}' to queue '{args.queue}'")
                 # Receive and print the response from the printer
                 response = lpr.receive()
@@ -542,7 +518,7 @@ def main():
                 print(response.decode('utf-8', errors='replace'))
                 return
             if args.longstatus:
-                lpr._send_lpr_command(4, (args.queue + " " + args.longstatus).encode('ascii'), noreceive=True)
+                lpr.send_lpr_command(4, (args.queue + " " + args.longstatus).encode('ascii'), noreceive=True)
                 print(f"Sent 'Send queue state (long)' command with attributes '{args.longstatus}' to queue '{args.queue}'")
                 # Receive and print the response from the printer
                 response = lpr.receive()
@@ -551,16 +527,20 @@ def main():
                 return
             if args.remove:
                 # Send the 'Remove jobs' command (0x05) to the specified queue
-                lpr._send_lpr_command(5, (args.queue + " " + args.remove).encode('ascii'))
+                lpr.send_lpr_command(5, (args.queue + " " + args.remove).encode('ascii'))
                 print(f"Sent 'Remove jobs' command with attributes '{args.remove}' to queue '{args.queue}'")
                 return
-            if args.epson:
+            if args.epson and EPSON_ESCP2_AVAILABLE:
+                escp2 = EpsonEscp2()
                 lpr.send(
-                    lpr.EXIT_PACKET_MODE
-                    + lpr.INITIALIZE_PRINTER
+                    escp2.EXIT_PACKET_MODE
+                    + escp2.INITIALIZE_PRINTER
                     + args.print_file.read().encode('utf-8')
-                    + lpr.FF
+                    + escp2.FF
                 )
+            elif args.epson and not EPSON_ESCP2_AVAILABLE:
+                print("Options --epson (-e) requires the epson_escp2 package to be installed.")
+                sys.exit(1)
             else:
                 lpr.send(args.print_file.read().encode('utf-8'))
     except KeyboardInterrupt:

@@ -8,7 +8,7 @@ Do not remove '# Connecting' in README.md.
 
 If a version needs to be changed, edit `pyprintlpr/__version__.py`.
 
-This file is read by *setup.py*.
+This file is read by *pyproject.toml* (dynamic version via PEP 621).
 
 If the version is not changed, the publishing procedure works using the same version with a different build number.
 

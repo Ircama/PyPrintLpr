@@ -377,7 +377,7 @@ def main():
         "--file",
         dest='print_file',
         type=argparse.FileType('r'),
-        help="File to be printed",
+        help='Path name of the file to be printed',
         metavar='PRINT_FILE'
     )
     parser.add_argument(

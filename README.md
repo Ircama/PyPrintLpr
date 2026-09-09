@@ -16,6 +16,8 @@ RFC 1179 client and server toolkits and Python library for interacting with prin
 
 ## Installation
 
+Requires Python 3.9 or later (Python 3.14 supported).
+
 ```bash
 pip install PyPrintLpr
 pip install epson_escp2  # Support advanced debugging of the Epson ESC/P2 protocol with the "server -d" option
@@ -35,13 +37,14 @@ Run the client to send print jobs to a printer:
 
 ```
 usage: pyprintlpr client [-h] -a ADDRESS [-p PORT]
-                         (-P | -s LIST | -S LIST | -R LIST | -f PRINT_FILE) [-d]
-                         [-e] [-q QUEUE] [-r] [-t TIMEOUT] [-b RECV_BUFFER]
-                         [-u USERNAME] [-l LABEL] [-j JOB_NAME]
+                         (-P | -s LIST | -S LIST | -R LIST | -f PRINT_FILE)
+                         [-d] [-e] [-q QUEUE] [-r] [-t TIMEOUT]
+                         [-b RECV_BUFFER] [-u USERNAME] [-l LABEL]
+                         [-j JOB_NAME]
 
 RAW and LPR print client.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -a ADDRESS, --address ADDRESS
                         Printer host name or IP address. (Example: -a 192.168.1.87)
@@ -58,9 +61,9 @@ optional arguments:
                         Remove jobs command with "list" attribute (RFC1179 0x05) to
                         the specified queue.
   -f PRINT_FILE, --file PRINT_FILE
-                        File to be printed
+                        Path name of the file to be printed
   -d, --debug           Print debug information
-  -e, --epson           Use Epson header and footer
+  -e, --epson           Use Epson header and footer (epson_escp2 package needed)
   -q QUEUE, --queue QUEUE
                         Queue name; default queue name is "PASSTHRU"
   -r, --reserved        Use reserved port range 721-731 (RFC 1179 requirement)
@@ -90,12 +93,13 @@ Notes:
 Run the server/proxy to capture, forward, or analyze print jobs:
 
 ```
-usage: pyprintlpr server [-h] [-a ADDRESS] [-t] [-d] [-I] [-i] [-s] [-p SAVE_PATH] [-q] [-l PORTS] [-e PORTS]
+usage: pyprintlpr server [-h] [-a ADDRESS] [-t] [-d] [-I] [-i] [-s]
+                         [-p SAVE_PATH] [-q] [-l PORTS] [-e PORTS]
                          [--timeout TIMEOUT]
 
 RAW and LPR print server with proxy, forward and local loopback features.
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   -a ADDRESS, --address ADDRESS
                         Printer IP address (if not provided, runs in local-only mode)
@@ -105,7 +109,7 @@ optional arguments:
   -i, --dump-image      When decoding, also dump image (requires epson_escp2)
   -s, --save-files      Save received print jobs to disk
   -p SAVE_PATH, --save-path SAVE_PATH
-                        Path name of the directory including the saved jobs (defaut: "lpr_jobs")
+                        Path name of the directory including the saved jobs (default: "lpr_jobs")
   -q, --quiet           Do not print debug data
   -l PORTS, --loopback PORTS
                         Comma-separated list of ports to loopback instead of forwarding to the target IP (e.g.,

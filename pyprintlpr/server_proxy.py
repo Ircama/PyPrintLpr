@@ -1183,7 +1183,7 @@ def main():
         '--save-path',
         type=str,
         default=None,
-        help='Path name of the directory including the saved jobs (defaut: "lpr_jobs")'
+        help='Path name of the directory including the saved jobs (default: "lpr_jobs")'
     )
     parser.add_argument(
         '-q',

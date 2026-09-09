@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=77.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PyPrintLpr"
+dynamic = ["version"]
+description = "RFC 1179 client and server toolkits and Python library for interacting with printers via LPR protocol or RAW mode, as well as a proxy/server for debugging, job capture, and protocol analysis."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Ircama" },
+]
+keywords = ["shell", "console", "tkinter"]
+license = "EUPL-1.2"
+license-files = ["LICENSE.txt"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Development Status :: 5 - Production/Stable",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+]
+dependencies = [
+    "hexdump2",
+    "pyyaml",
+]
+
+[project.urls]
+Homepage = "https://github.com/Ircama/PyPrintLpr"
+
+[project.scripts]
+pyprintlpr = "pyprintlpr.__main__:main"
+
+[tool.setuptools]
+packages = ["pyprintlpr"]
+
+[tool.setuptools.dynamic]
+version = { attr = "pyprintlpr.__version__.__version__" }
